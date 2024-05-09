@@ -64,6 +64,20 @@ void receivePlayersPositionsInParallelThread(UDPReceiver* udpReceiver,
     }
 }
 
+void sendPlayerPositionInParallelThread(const std::vector<std::unique_ptr<UDPSender>>* udpSenders,
+                                        const Player* player,
+                                        std::atomic<bool>* isRunning) {
+    while (isRunning->load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto posX = player->posX();
+        auto posY = player->posY();
+        for (const auto& udpSender : *udpSenders) {
+            udpSender->send(posX, posY);
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     ProgramArguments args = parseArgs(argc, argv);
@@ -97,6 +111,10 @@ int main(int argc, char *argv[])
                               &playerIndexes,
                               &map,
                               &isRunning);
+    std::thread playerSendThread(sendPlayerPositionInParallelThread,
+                                &udpSenders,
+                                &player,
+                                &isRunning);
 
     while (true)
     {
@@ -125,10 +143,9 @@ int main(int argc, char *argv[])
         if (inputManager.esc())
             break;
 
-        for (auto &udpSender : udpSenders)
-            udpSender->send(player.posX(), player.posY());
-
     }
     isRunning = false;
     playerRecieveThread.join();
+    playerSendThread.join();
+
 }
