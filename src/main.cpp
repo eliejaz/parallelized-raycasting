@@ -13,6 +13,8 @@
 #include <omp.h>
 #include <thread>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 struct ProgramArguments
 {
@@ -64,17 +66,29 @@ void receivePlayersPositionsInParallelThread(UDPReceiver* udpReceiver,
     }
 }
 
+std::mutex mtx;
+std::condition_variable cv;
+bool positionChanged = false;
+
 void sendPlayerPositionInParallelThread(const std::vector<std::unique_ptr<UDPSender>>* udpSenders,
                                         const Player* player,
                                         std::atomic<bool>* isRunning) {
+    std::unique_lock<std::mutex> lock(mtx, std::defer_lock);
+
     while (isRunning->load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        lock.lock();
+        cv.wait(lock, []{ return positionChanged; });
 
         auto posX = player->posX();
         auto posY = player->posY();
+
         for (const auto& udpSender : *udpSenders) {
             udpSender->send(posX, posY);
         }
+
+
+        positionChanged = false;
+        lock.unlock();
     }
 }
 
@@ -116,8 +130,11 @@ int main(int argc, char *argv[])
                                 &player,
                                 &isRunning);
 
-    while (true)
+   while (true)
     {
+        double oldPosX = player.posX();
+        double oldPosY = player.posY();
+
         raycaster.castFloorCeiling();
         raycaster.castWalls();
         raycaster.castSprites();
@@ -143,6 +160,12 @@ int main(int argc, char *argv[])
         if (inputManager.esc())
             break;
 
+        // Check if position has changed
+        if (player.posX() != oldPosX || player.posY() != oldPosY) {
+            std::lock_guard<std::mutex> guard(mtx);
+            positionChanged = true;
+            cv.notify_one();
+        }
     }
     isRunning = false;
     playerRecieveThread.join();
