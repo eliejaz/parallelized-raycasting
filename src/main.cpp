@@ -11,6 +11,8 @@
 #include <UDPSender.h>
 #include <util.h>
 #include <omp.h>
+#include <thread>
+#include <atomic>
 
 struct ProgramArguments
 {
@@ -22,14 +24,13 @@ struct ProgramArguments
 
 ProgramArguments parseArgs(int argc, char *argv[])
 {
-    if (argc != 5)
+    if (argc != 4)
     {
         std::cerr << "Usage: " << argv[0] << " <screenWidth> <screenHeight> <ipsPath> <numThreads>" << std::endl;
         std::cerr << "  screenWidth: The width of the screen." << std::endl;
         std::cerr << "  screenHeight: The height of the screen." << std::endl;
         std::cerr << "  ipsPath: The path to the file containing the IP addresses and ports of the players." << std::endl;
-        std::cerr << "  numThreads: Number of threads." << std::endl;
-        std::cerr << "Example: " << argv[0] << " 1920 1080 ips.txt 4" << std::endl;
+        std::cerr << "Example: " << argv[0] << " 1920 1080 ips.txt " << std::endl;
         exit(1);
     }
 
@@ -37,8 +38,30 @@ ProgramArguments parseArgs(int argc, char *argv[])
     args.screenWidth = std::stoi(argv[1]);
     args.screenHeight = std::stoi(argv[2]);
     args.ipsPath =  argv[3];
-    args.numThreads = std::stoi(argv[4]);
+    args.numThreads = 1;
     return args;
+}
+
+void receivePlayersPositionsInParallelThread(UDPReceiver* udpReceiver,
+                                             size_t nbPlayers,
+                                             std::map<std::string, int>* playerIndexes,
+                                             Map* map,
+                                             std::atomic<bool>* isRunning) {
+    int playerIndex = 0;
+    while (isRunning->load()) {
+        for (size_t i = 0; i < nbPlayers; i++) {
+            try {
+                auto data = udpReceiver->receive();
+                if (playerIndexes->find(data.first) == playerIndexes->end()) {
+                    (*playerIndexes)[data.first] = playerIndex++;
+                    playerIndex %= nbPlayers;
+                }
+                int index = (*playerIndexes)[data.first];
+                map->movePlayer(index, data.second.x(), data.second.y());
+            } catch (...) {
+            }
+        }
+    }
 }
 
 int main(int argc, char *argv[])
@@ -54,7 +77,6 @@ int main(int argc, char *argv[])
     for (auto ipPort : data.ipPorts)
         udpSenders.push_back(std::unique_ptr<UDPSender>(new UDPSender(ipPort.first, ipPort.second)));
     size_t nbPlayers = udpSenders.size();
-    int playerIndex = 0;
     std::map<std::string, int> playerIndexes;
 
     Map map = Map::generateMap(nbPlayers);
@@ -67,6 +89,14 @@ int main(int argc, char *argv[])
 
     Texture floorTexture = map.getFloorTexture();
     Texture ceilingTexture = map.getCeilingTexture();
+
+    std::atomic<bool> isRunning(true);
+    std::thread playerRecieveThread(receivePlayersPositionsInParallelThread,
+                              &udpReceiver,
+                              nbPlayers,
+                              &playerIndexes,
+                              &map,
+                              &isRunning);
 
     while (true)
     {
@@ -98,22 +128,7 @@ int main(int argc, char *argv[])
         for (auto &udpSender : udpSenders)
             udpSender->send(player.posX(), player.posY());
 
-        for (size_t i = 0; i < nbPlayers; i++)
-        {
-            try
-            {
-                auto data = udpReceiver.receive();
-                if (playerIndexes.find(data.first) == playerIndexes.end())
-                {
-                    playerIndexes[data.first] = playerIndex++;
-                    playerIndex %= nbPlayers;
-                }
-                int index = playerIndexes[data.first];
-                map.movePlayer(index, data.second.x(), data.second.y());
-            }
-            catch (...)
-            {
-            }
-        }
     }
+    isRunning = false;
+    playerRecieveThread.join();
 }
