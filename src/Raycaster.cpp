@@ -4,7 +4,6 @@
 
 #include <cmath>
 #include <algorithm>
-
 #include <Raycaster.h>
 
 Raycaster::Raycaster(Player &player, WindowManager &windowManager, Map &map) : player(player),
@@ -23,16 +22,14 @@ Raycaster::Raycaster(Player &player, WindowManager &windowManager, Map &map) : p
 
 void Raycaster::castFloorCeiling()
 {
-    Vector<double> rayDir0 = {0, 0}, rayDir1 = {0, 0};
     // Vertical position of the camera.
     double posZ = 0.5 * screenHeight;
+    Vector<double> rayDir0 = {player.dirX() - player.camX(), player.dirY() - player.camY()};
+    Vector<double> rayDir1 = {player.dirX() + player.camX(), player.dirY() + player.camY()};
 
+    #pragma omp parallel for
     for (int y = screenHeight / 2; y < screenHeight; y++)
     {
-        // rayDir for leftmost ray (x = 0) and rightmost ray (x = w)
-        rayDir0 = {player.dirX() - player.camX(), player.dirY() - player.camY()};
-        rayDir1 = {player.dirX() + player.camX(), player.dirY() + player.camY()};
-
         // Current y position compared to the center of the screen (the horizon)
         int p = y - screenHeight / 2;
 
@@ -79,6 +76,7 @@ void Raycaster::castFloorCeiling()
 
 void Raycaster::castWalls()
 {
+    #pragma omp parallel for
     for (int x = 0; x < screenWidth; x++)
     {
         // calculate ray position and direction
@@ -206,6 +204,7 @@ void Raycaster::castSprites()
     int screenHeight = windowManager.getHeight();
 
     // sort sprites from far to close
+    #pragma omp parallel for
     for (int i = 0; i < numSprites; i++)
     {
         spriteOrder[i] = i;
@@ -216,6 +215,7 @@ void Raycaster::castSprites()
     sortSprites();
 
     // after sorting the sprites, do the projection and draw them
+    #pragma omp parallel for
     for (int i = 0; i < numSprites; i++)
     {
         Sprite sprite = sprites[spriteOrder[i]];
@@ -280,6 +280,7 @@ void Raycaster::castSprites()
 void Raycaster::sortSprites()
 {
     std::vector<std::pair<double, int>> sprites(numSprites);
+    #pragma omp parallel for
     for (int i = 0; i < numSprites; i++)
     {
         sprites[i].first = spriteDistance[i];
@@ -287,6 +288,7 @@ void Raycaster::sortSprites()
     }
     std::sort(sprites.begin(), sprites.end());
     // restore in reverse order to go from farthest to nearest
+    #pragma omp parallel for
     for (int i = 0; i < numSprites; i++)
     {
         spriteDistance[i] = sprites[numSprites - i - 1].first;

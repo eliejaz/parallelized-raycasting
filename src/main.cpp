@@ -10,36 +10,41 @@
 #include <UDPReceiver.h>
 #include <UDPSender.h>
 #include <util.h>
+#include <omp.h>
 
 struct ProgramArguments
 {
     int screenWidth;
     int screenHeight;
+    int numThreads;
     std::string ipsPath;
 };
 
 ProgramArguments parseArgs(int argc, char *argv[])
 {
-    if (argc != 4)
+    if (argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " <screenWidth> <screenHeight> <ipsPath>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <screenWidth> <screenHeight> <ipsPath> <numThreads>" << std::endl;
         std::cerr << "  screenWidth: The width of the screen." << std::endl;
         std::cerr << "  screenHeight: The height of the screen." << std::endl;
         std::cerr << "  ipsPath: The path to the file containing the IP addresses and ports of the players." << std::endl;
-        std::cerr << "Example: " << argv[0] << " 1920 1080 ips.txt" << std::endl;
+        std::cerr << "  numThreads: Number of threads." << std::endl;
+        std::cerr << "Example: " << argv[0] << " 1920 1080 ips.txt 4" << std::endl;
         exit(1);
     }
 
     ProgramArguments args;
     args.screenWidth = std::stoi(argv[1]);
     args.screenHeight = std::stoi(argv[2]);
-    args.ipsPath = argc == 4 ? argv[3] : "";
+    args.ipsPath =  argv[3];
+    args.numThreads = std::stoi(argv[4]);
     return args;
 }
 
 int main(int argc, char *argv[])
 {
     ProgramArguments args = parseArgs(argc, argv);
+    omp_set_num_threads(args.numThreads);
     const int screenWidth = args.screenWidth;
     const int screenHeight = args.screenHeight;
 
